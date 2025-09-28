@@ -1,0 +1,248 @@
+import { track, effect } from 'ripple';
+import { toPath } from "../utils/path-utils";
+import type { 	 
+	FormState,
+	RegisterOptions,
+	RegisteredField,
+	UseFormReturn,CreateFormProps
+} from "../types"
+import type {Path} from '../types/path'
+
+export const createForm = <TValues extends Record<string,any>>(
+  prop: CreateFormProps<TValues>
+): UseFormReturn<TValues> =>{
+  let initialValue =( prop.initialValue || {} ) as TValues;
+  const resolver = prop.resolver;
+  const mode = prop.mode || 'onSubmit';
+
+  const formState = {
+    formValue: initialValue,
+    formError: {} as Record<string, string >,
+    touchedField: {} as Record<string, boolean>,
+    dirtyField: {} as Record<string, boolean>,
+    submitCount: 0,
+  };
+
+  const validators = new Map<string, ValidatorFn<TValues>[]>();
+  const subscribers = new Map<string, Set<(fieldData: any) => void>>();
+  const globalSubscribers = new Set<(state: typeof formState) => void>();
+
+  const getValue = (obj: any, stringPath: string) => {
+    if (stringPath == null) return obj;
+    const parts = toPath(stringPath);
+    let cur = obj;
+    for (const p of parts) {
+      if (cur == null) return undefined;
+      cur = cur[p];
+    }
+    return cur;
+  };
+
+  const set = (obj: any, path: string | (string | number)[], value: any) => {
+    const parts = toPath(path);
+    let cur = obj;
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      if (i === parts.length - 1) {
+        cur[p] = value;
+      } else {
+        if (cur[p] == null) cur[p] = typeof parts[i + 1] === 'number' ? [] : {};
+        cur = cur[p];
+      }
+    }
+    return obj;
+  };
+
+  const notify = (name?: string) => {
+    if (name && subscribers.has(name)) {
+      for (const cb of subscribers.get(name)) {
+        cb({
+          value: getValue(formState.formValue, name),
+          error: formState.formError[name],
+          isDirty: formState.dirtyField[name],
+          touched: formState.touchedField[name],
+        });
+      }
+    }
+    for (const cb of globalSubscribers) {
+      cb(formState);
+    }
+  };
+
+  const notifyAll = () => {
+    for (const [name, setSubs] of subscribers.entries()) {
+      for (const cb of setSubs) {
+        cb({
+          value: getValue(formState.formValue, name),
+          error: formState.formError[name],
+          isDirty: formState.dirtyField[name],
+          touched: formState.touchedField[name],
+        });
+      }
+    }
+    for (const cb of globalSubscribers) cb(formState);
+  };
+
+  const setValue = (path: string, value: any, opts?: { shouldValidate?: boolean; shouldDirty?: boolean; shouldTouch?: boolean }) => {
+    const prev = getValue(formState.formValue, path);
+    formState.formValue = set({ ...formState.formValue }, path, value);
+
+    if (opts?.shouldDirty ?? true) {
+      formState.dirtyField[path] = prev !== value && value !== getValue(initialValue, path);
+    }
+
+    if (opts?.shouldValidate || formState.submitCount > 0 || mode === 'all') {
+      validateField(path, value);
+    }
+
+    if (opts?.shouldTouch) {
+      formState.touchedField[path] = true;
+    }
+
+    notify(path);
+  };
+
+  const validateField = async (path: string, val: any) => {
+    const values = formState.formValue;
+
+    if (resolver) {
+      const r = await Promise.resolve(resolver(values));
+      formState.formError = r.errors ?? {};
+      notify(path);
+      return formState.formError[path];
+    }
+
+    const fns = validators.get(path) ?? [];
+    const errors = { ...formState.formError };
+    for (const fn of fns) {
+      const msg = await Promise.resolve(fn(val, structuredClone(values)));
+      if (msg) {
+        errors[path] = msg;
+        formState.formError = errors;
+        notify(path);
+        return msg;
+      }
+    }
+    delete errors[path];
+    formState.formError = errors;
+    notify(path);
+  };
+
+  const validateForm = async (): Promise<Record<string, string | undefined>> => {
+    if (resolver) {
+      const r = await Promise.resolve(resolver(formState.formValue));
+      formState.formError = r.errors ?? {};
+      return { ...formState.formError };
+    }
+
+    const allErrs: Record<string, string | undefined> = {};
+    const tasks: Promise<void>[] = [];
+
+    for (const [name, fns] of validators.entries()) {
+      tasks.push(
+        (async () => {
+          for (const fn of fns) {
+            const msg = await Promise.resolve(fn(getValue(formState.formValue, name), formState.formValue));
+            if (msg) {
+              allErrs[name] = msg;
+              formState.formError[name] = msg;
+              break;
+            } else {
+              delete formState.formError[name];
+            }
+          }
+        })()
+      );
+    }
+
+    await Promise.all(tasks);
+    return { ...formState.formError, ...allErrs };
+  };
+
+  const register = <TPath extends Path<TValues>>(name: TPath, options?: RegisterOptions<TValues>): RegisteredField<TValues[TPath]> => {
+    const fieldState = {
+      value: track(getValue(initialValue, name as string)) as ReturnType<typeof track<TValues[TPath]>>,
+      error: track<string | undefined>(),
+      touched: track(false),
+      isDirty: track(false),
+    };
+
+    if (options?.validate) {
+      const arr = Array.isArray(options.validate) ? options.validate : [options.validate];
+      const prev = validators.get(name as string) ?? [];
+      validators.set(name as string, [...prev, ...arr]);
+    }
+
+    const oninput = (evOrVal: any) => {
+      const val = evOrVal && evOrVal.target !== undefined
+        ? evOrVal.target.type === 'checkbox'
+          ? evOrVal.target.checked
+          : evOrVal.target.value
+        : evOrVal;
+		
+      setValue(name as string, val, { shouldValidate: mode === 'all', shouldDirty: true, shouldTouch: true });
+    };
+
+    const onchange = () => {
+      fieldState.@touched = true;
+      notify(name as string);
+    };
+
+    const cb = (fieldData: any) => {
+    	if (fieldState.@value !== fieldData.value) {
+			fieldState.@value = fieldData.value
+		};
+    	if (fieldState.@error !== fieldData.error){ 
+			fieldState.@error = fieldData.error;
+		}
+    	if (fieldState.@touched !== fieldData.touched){ 
+			fieldState.@touched = fieldData.touched;
+		}
+    	if (fieldState.@isDirty !== fieldData.isDirty){ 
+			fieldState.@isDirty = fieldData.isDirty;
+		}
+    };
+
+    const cuurSubs = subscribers.get(name as string) || new Set();
+    cuurSubs.add(cb);
+    subscribers.set(name as string, cuurSubs);
+ 
+    return {
+      name: name as string,
+      value: fieldState.value,
+      error: fieldState.error,
+      touched: fieldState.touched,
+      isDirty: fieldState.isDirty,
+      oninput,
+      onchange,
+    };
+  };
+
+  const handleSubmit = (successCB: (values: TValues) => void, errorCB?: (errors: Record<string, string | undefined>) => void) => {
+    return async (e?: Event) => {
+      e?.preventDefault();
+      formState.submitCount++;
+      await validateForm();
+      notifyAll();
+      if (Object.values(formState.formError).some(Boolean)) {
+        errorCB?.(formState.formError);
+      } else {
+        successCB(formState.formValue);
+      }
+    };
+  };
+
+  const reset = (values: Partial<TValues>, options?: { keepDirty?: boolean; keepTouched?: boolean; keepError?: boolean }) => {
+    formState.submitCount = 0;
+    initialValue = { ...values } as TValues;
+    formState.formValue = { ...values } as TValues;
+
+    if (!options?.keepDirty) formState.dirtyField = {};
+    if (!options?.keepTouched) formState.touchedField = {};
+    if (!options?.keepError) formState.formError = {};
+
+    notifyAll();
+  };
+
+  return { register, handleSubmit, reset };
+}

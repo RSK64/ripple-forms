@@ -8,7 +8,11 @@
 		"moduleResolution": "bundler",
 		"jsx": "preserve",
 		"jsxImportSource": "ripple",
-		"noEmit": true,
-		"isolatedModules": true
-	}
+		"isolatedModules": true,
+		"emitDeclarationOnly": true,
+		"declaration": true,
+		"outDir": "dist",
+		"removeComments": false
+	},
+	"include": ["src", "ripple.d.ts"],
 }

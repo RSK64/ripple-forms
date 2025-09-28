@@ -1,28 +1,47 @@
 {
-  "name": "ripple-forms",
-  "version": "1.0.0",
-  "description": "A Ripple application created with create-ripple",
-  "type": "module",
-  "engines": {
-    "node": ">=20.0.0"
-  },
-  "scripts": {
-    "start": "vite",
-    "dev": "vite",
-    "build": "vite build",
-    "serve": "vite preview",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
-  },
-  "license": "MIT",
-  "devDependencies": {
-    "prettier": "^3.6.2",
-    "prettier-plugin-ripple": "^0.2.29",
-    "typescript": "^5.9.2",
-    "vite": "^7.1.4",
-    "vite-plugin-ripple": "^0.2.29"
-  },
-  "dependencies": {
-    "ripple": "^0.2.35"
-  }
+	"name": "ripple-forms",
+	"version": "0.1.0",
+	"description": "A reactive, type-safe form library for Ripple framework inspired by React Hook Form. It supports nested objects, arrays, and dot-bracket notation for field paths (e.g., addresses.[0].street). Built for simplicity, full TypeScript support, and reactive updates using ripple's track/effect.",
+	"type": "module",
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"scripts": {
+		"start": "vite",
+		"dev": "vite",
+		"serve": "vite preview",
+		"format": "prettier --write .",
+		"format:check": "prettier --check .",
+		"build": "pnpm build:vite && pnpm build:tsc",
+		"build:vite": "vite build",
+		"build:tsc": "tsc",
+		"prepack": "pnpm build"
+	},
+	"main": "./src/index.ripple",
+	"exports": {
+		".": {
+			"import": "./src/index.ripple",
+			"types": "./src/types/index.ts"
+		}
+	},
+	"keywords": [
+		"typescript",
+		"ripple",
+		"form",
+		"validations"
+	],
+	"author": {
+		"name": "Rahil Sheikh"
+	},
+	"license": "MIT",
+	"devDependencies": {
+		"prettier": "^3.6.2",
+		"prettier-plugin-ripple": "^0.2.83",
+		"typescript": "^5.9.2",
+		"vite": "^7.1.4",
+		"vite-plugin-ripple": "^0.2.88"
+	},
+	"dependencies": {
+		"ripple": "^0.2.88"
+	}
 }
