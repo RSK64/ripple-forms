@@ -1,12 +1,19 @@
 import { defineConfig } from 'vite';
 import { ripple } from 'vite-plugin-ripple';
 
-export default defineConfig({
+export default defineConfig(({ mode }) =>({
 	plugins: [ripple()],
-	server: {
-		port: 3000,
-	},
 	build: {
 		target: 'esnext',
+		minify: false,
+		sourcemap: mode !== 'production',
+		lib: {
+			entry: 'src/index.ripple',
+			formats: ['es'],
+			fileName: 'index',
+		},
+		rollupOptions: {
+			external: ['ripple', /^ripple\//],
+		},
 	},
-});
+}));
